@@ -46,12 +46,9 @@ export class SmsService {
           },
         },
       );
-      console.log(response);
       const data = response.data;
-      console.log(data, 'data');
       const phone_number_raw = data?.phone;
       const phone_number = phone_number_raw?.replace(country_code, '');
-      console.log(phone_number, 'phone_number');
       const verification_id = data?.id;
       return {
         phone_number,
@@ -76,9 +73,7 @@ export class SmsService {
             },
           },
         );
-        console.log(response);
         const data = response.data;
-        console.log(data, 'data');
         const sms = data?.sms || [];
         if (sms.length > 0) {
           code = sms[0]?.code;

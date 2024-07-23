@@ -3,14 +3,14 @@ import { Page } from 'puppeteer';
 import { clickElement, inputElement, waitForSecs } from '../utils';
 import { Country, User } from '../signup/dto/signup.dto';
 import * as moment from 'moment';
-import { SmsService } from '../sms/sms.service';
+// import { SmsService } from '../sms/sms.service';
 import * as path from 'path';
 import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class UpworkService {
   constructor(
-    private readonly smsService: SmsService,
+    // private readonly smsService: SmsService,
     private readonly emailService: EmailService,
   ) {}
 
@@ -115,7 +115,6 @@ export class UpworkService {
       if (user?.country === Country.United_States) {
         formatDate = 'MM/DD/YYYY';
       }
-      console.log(formatDate, 'formatDate');
       await inputElement(
         page,
         'input[aria-labelledby="date-of-birth-label"]',
@@ -143,30 +142,29 @@ export class UpworkService {
         user?.country === Country.United_States ||
         user?.country === Country.United_Kingdom
       ) {
-        await clickElement(page, '[data-qa="input-address"]', 1);
-        await page.keyboard.type(user?.address || '');
-        await waitForSecs(2);
+        await clickElement(page, '[data-qa="dropdown-country"]', 2);
+        await clickElement(page, '[data-test="dropdown-search"]');
+        await page.keyboard.type('Indonesia');
+        await waitForSecs(1);
         await page.keyboard.press('ArrowDown');
         await page.keyboard.press('Enter');
-        await waitForSecs(1);
-        const { phone_number, verification_id } =
-          await this.smsService.getPhoneNumberForVerification(user?.country);
-        await clickElement(page, 'input[type="tel"]', 1);
-        await page.keyboard.type(phone_number || '', {
-          delay: 100,
-        });
-        await waitForSecs(1);
-        const captcha = await page.$('[id="phone-recaptcha"]');
-        if (captcha) {
-          await clickElement(page, '[id="phone-recaptcha"]', 2);
-          await waitForSecs(20);
-        }
-        await clickElement(page, '[data-qa="pv-go-to-enter-code-btn"]', 3);
-        const code = await this.smsService.getVerificationCode(verification_id);
-        await clickElement(page, 'input[class="vue-pincode-input"]');
-        await page.keyboard.type(code || '');
-        await waitForSecs(2);
-        await clickElement(page, '[data-qa="pv-verify-btn"]', 3);
+        await inputElement(
+          page,
+          'input[aria-labelledby="street-label"]',
+          'JL Merdeka No. 3',
+        );
+        await clickElement(page, 'input[aria-labelledby="city-label"]', 1);
+        await inputElement(
+          page,
+          'input[aria-labelledby="city-label"]',
+          'Jakarta',
+        );
+        await clickElement(page, 'li[role="option"]', 1);
+        await inputElement(
+          page,
+          '[data-ev-label="phone_number_input"]',
+          '855367287211',
+        );
       } else if (
         user?.country === Country.Canada ||
         user?.country === Country.Ukraine
@@ -196,8 +194,16 @@ export class UpworkService {
       const image = path.join(__dirname, '../../images.jpg');
       await input?.uploadFile(image);
       await waitForSecs(3);
-      await clickElement(page, '[data-qa="btn-save"]', 5);
+      await clickElement(page, '[data-qa="btn-save"]', 6);
       await clickElement(page, '[data-test="next-button"]', 3);
+      if (
+        user?.country === Country.United_States ||
+        user?.country === Country.United_Kingdom
+      ) {
+        await this.hitSaveAddress(page, user);
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await waitForSecs(3);
+      }
       await clickElement(page, '[data-qa="submit-profile-bottom-btn"]', 3);
       const browse_jobs = await page.$('[href="/nx/find-work/best-matches/"]');
       if (browse_jobs) {
@@ -216,11 +222,6 @@ export class UpworkService {
       for (const experience of user?.experience) {
         await clickElement(page, '[data-qa="employment-add-btn"]', 3);
         await page.waitForSelector('[data-ev-sublocation="!modal"]');
-        const inputs = await page.$$('input');
-        for (const input of inputs) {
-          const id = await input.evaluate((el) => el?.id);
-          console.log(id, 'id');
-        }
         await clickElement(page, 'div[class="air3-typeahead-fake"]', 2);
         await page.keyboard.type(experience?.role_title);
         await page.keyboard.press('Enter');
@@ -364,12 +365,101 @@ export class UpworkService {
     }
   }
 
+  async hitSaveAddress(page: Page, user: User) {
+    try {
+      let phoneCode = '';
+      switch (user?.country) {
+        case Country.United_States:
+          phoneCode = 'US';
+          break;
+        case Country.United_Kingdom:
+          phoneCode = 'GB';
+          break;
+        default:
+          break;
+      }
+      await page.evaluate(
+        async (user, phoneCode) => {
+          const url =
+            'https://www.upwork.com/ab/create-profile/api/min/v1/save-address-phone';
+
+          const cookies = document.cookie;
+          // get XSRF-TOKEN from cookies
+          const xsrfToken = cookies
+            .split(';')
+            .find((cookie) => cookie.includes('XSRF-TOKEN'))
+            .replace('XSRF-TOKEN=', '');
+          // oauth2_global_js_token
+          const oauth2GlobalJsToken = cookies
+            .split(';')
+            .find((cookies) => cookies.includes('oauth2_global_js_token'))
+            .replace('oauth2_global_js_token=', '');
+
+          const requestData = {
+            address: {
+              street: user?.address,
+              state: user?.state,
+              city: user?.city,
+              zip: user?.zip_code,
+              additionalInfo: null,
+              country: user?.country,
+            },
+            phoneNumber: user?.phone_number,
+            phoneCode,
+          };
+
+          try {
+            const response = await fetch(url, {
+              method: 'POST',
+              headers: {
+                Accept: 'application/json, text/plain, */*',
+                'Accept-Language': 'id-ID,id;q=0.9',
+                Authorization: 'Bearer ' + oauth2GlobalJsToken,
+                'Content-Type': 'application/json',
+                Cookie: cookies,
+                Origin: 'https://www.upwork.com',
+                Referer: 'https://www.upwork.com/nx/create-profile/location',
+                'Sec-Ch-Ua':
+                  '"Not/A)Brand";v="8", "Chromium";v="126", "Google Chrome";v="126"',
+                'Sec-Ch-Ua-Full-Version-List':
+                  '"Not/A)Brand";v="8.0.0.0", "Chromium";v="126.0.6478.183", "Google Chrome";v="126.0.6478.183"',
+                'Sec-Ch-Ua-Mobile': '?0',
+                'Sec-Ch-Ua-Platform': '"macOS"',
+                'Sec-Ch-Viewport-Width': '725',
+                'Sec-Fetch-Dest': 'empty',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'same-origin',
+                'User-Agent':
+                  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+                'X-Odesk-Csrf-Token': xsrfToken,
+                'X-Odesk-User-Agent': 'oDesk LM',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-Upwork-Accept-Language': 'en-US',
+              },
+              body: JSON.stringify(requestData),
+            });
+
+            if (!response.ok) {
+              throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+          } catch (error) {
+            console.error('Error:', error);
+          }
+        },
+        user,
+        phoneCode,
+      );
+    } catch (error) {
+      throw error;
+    }
+  }
+
   async verifyEmail(page: Page, user: User) {
     try {
       await waitForSecs(15);
       const verificationLink = await this.emailService.verifyEmail(user.email);
       await page.goto(verificationLink, { waitUntil: 'domcontentloaded' });
-      await waitForSecs(10);
+      await waitForSecs(15);
     } catch (error) {
       throw error;
     }

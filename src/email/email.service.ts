@@ -20,7 +20,6 @@ export class EmailService {
           },
         },
       );
-      console.log(response.data);
       const emailText = response.data?.data?.plain;
       const urlRegex = /(https?:\/\/[^\s]+)/g;
       const urls = emailText.match(urlRegex);

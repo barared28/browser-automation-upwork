@@ -13,7 +13,6 @@ export class SignupController {
       (async () => {
         for (const user of users) {
           await this.signupService.createUser(user);
-          console.log(user);
         }
       })();
       return {
